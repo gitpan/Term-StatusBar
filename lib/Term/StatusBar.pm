@@ -6,7 +6,7 @@
   use Term::ANSIScreen qw(:cursor :color :constants);
   $Term::ANSIScreen::AUTORESET = 1;
   our $AUTOLOAD;
-  our $VERSION = do { my @r=(q$Revision: 1.6 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  our $VERSION = do { my @r=(q$Revision: 1.8 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
 
 
 #####################
@@ -44,7 +44,16 @@
   #################################################
  
       ($self->{maxCol}, undef) = Term::Size::chars *STDOUT{IO};
-      no Term::Size;  ## No sense keeping this around
+
+
+  ############################################
+  # Placed a workaround here for Perl 5.6.0 
+  # that seems to bomb on 'no MODULE'
+  ############################################
+
+      if (do { my @r=($]=~/\d+/g); sprintf "%d."."%02d"x$#r,@r } >= 5.6001){
+          no Term::Size;  ## No sense keeping this around
+      }
 
       if (($self->{scale} + length($self->{label}) + 6) >= $self->{maxCol}){
           $self->{scale} = $self->{maxCol} - 6 - length($self->{label});
