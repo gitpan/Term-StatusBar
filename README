@@ -30,7 +30,8 @@ SYNOPSIS
 DESCRIPTION
     Term::StatusBar uses Term::ANSIScreen for cursor positioning and to give
     the 'illusion' that the bar is moving. Term::Size is used to ensure the
-    bar does not extend beyond the terminal's width.
+    bar does not extend beyond the terminal's width. All outout is sent to
+    STDOUT.
 
 METHODS
   new(parameters)

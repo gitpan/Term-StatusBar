@@ -46,14 +46,11 @@
       ($self->{maxCol}, undef) = Term::Size::chars *STDOUT{IO};
 
 
-  ############################################
-  # Placed a workaround here for Perl 5.6.0 
-  # that seems to bomb on 'no MODULE'
-  ############################################
+  ################################################
+  # Removed since Perl 5.6.0 has problems with it 
+  ################################################
 
-      if (do { my @r=($]=~/\d+/g); sprintf "%d."."%02d"x$#r,@r } >= 5.6001){
-          no Term::Size;  ## No sense keeping this around
-      }
+#      no Term::Size;
 
       if (($self->{scale} + length($self->{label}) + 6) >= $self->{maxCol}){
           $self->{scale} = $self->{maxCol} - 6 - length($self->{label});
@@ -320,7 +317,8 @@ Term::StatusBar - Dynamic progress bar
 
 Term::StatusBar uses Term::ANSIScreen for cursor positioning and to give 
 the 'illusion' that the bar is moving. Term::Size is used to ensure the 
-bar does not extend beyond the terminal's width.
+bar does not extend beyond the terminal's width. All outout is sent to 
+STDOUT.
 
 =head1 METHODS
 
