@@ -4,7 +4,7 @@ no warnings 'portable';
 $|++;
 require 5.6.0; 
 our ($AUTOLOAD, $FH);
-our $VERSION = 1.16;
+our $VERSION = '1.18';
 
 
 sub new {
@@ -13,6 +13,7 @@ sub new {
    my $self = bless{
       startRow      => $params{startRow} || 1,
       startCol      => $params{startCol} || 1,
+      startPos      => $params{startPos} || 'top',
       label         => $params{label} || 'Status: ',
       scale         => $params{scale} || 40,
       totalItems    => $params{totalItems} || 1,
@@ -26,12 +27,14 @@ sub new {
       baseScale     => 100,
       start         => 0,
       maxCol        => 80,
+      maxRow        => 24,
       prevSubText   => undef,
       subText       => undef,
       subTextAlign  => $params{subTextAlign} || 'left',
       reverse       => $params{reverse} || 0,
-      barColor      => $params{barColor} || "\e[7;37m",
-      fillColor     => $params{fillColor} || "\e[7;34m",
+      barColor      => $params{barColor} || "\033[7;37m",
+      fillColor     => $params{fillColor} || "\033[7;34m",
+      colorTerm     => $params{colorTerm}ne'0',
       barStart      => undef,
       subTextChange => undef,
       subTextLength => undef,
@@ -44,6 +47,10 @@ sub new {
 
    $FH = $self->{fh};
 
+   if (!$self->{colorTerm}){
+      $self->{barColor} = '';
+   }
+
    $self->subText($params{subText});
    $self->setItems($params{totalItems}) if $params{totalItems};
    $self->{barStart} = length($self->{label})+1;
@@ -51,7 +58,11 @@ sub new {
    ## Check if scale exceeds current width of screen 
    ## and adjust accordingly. Not much we can do if 
    ## label exceeds screen width
-   $self->_get_max_width();
+   $self->_get_max_term();
+
+   if ($self->{startPos} eq 'bottom'){
+      $self->{startRow} = $self->{maxRow}-($self->{subText}?2:1);
+   }
 
    if (($self->{scale} + $self->{barStart} + 5) >= $self->{maxCol}){
       $self->{scale} = $self->{maxCol} - 5 - $self->{barStart};
@@ -63,7 +74,9 @@ sub new {
       eval { require Time::HiRes };
 
       if (!$@){
-         $self->{startRow}++;
+         if ($self->{startPos} ne 'bottom'){
+            $self->{startRow}++;
+         }
       }
       else{
          $self->{showTime} = 0;
@@ -74,16 +87,15 @@ sub new {
    return $self;
 }
 
-sub DESTROY { sigint(); }
-
-
 ##
 ## Just in case this isn't done in caller. We 
 ## need to be able to reset the display.
 ##
 sub sigint {
-  print $FH "\n\n";
-  exit;
+	my $self = shift;
+	my $offset = $self->{startRow} + ($self->{reverse}?-5:5);
+	print $FH "\033[$offset;1H\033[0m\n\n";
+	exit;
 }
 
 
@@ -159,9 +171,9 @@ sub addSubText {
 sub start {
   my ($self) = @_;
 
-  print $FH "\e[$self->{startRow};$self->{startCol}H", (' 'x($self->{maxCol}-$self->{startCol}));
-  print $FH "\e[$self->{startRow};$self->{startCol}H$self->{label}";
-  print $FH $self->{barColor}, ($self->{char}x$self->{scale}), "\e[0m";
+  print $FH "\033[$self->{startRow};$self->{startCol}H", (' 'x($self->{maxCol}-$self->{startCol}));
+  print $FH "\033[$self->{startRow};$self->{startCol}H$self->{label}";
+  print $FH $self->{barColor}, ($self->{char}x$self->{scale}), "\033[0m";
 
   print $FH $self->_printPercent($self->{reverse}?100:0);
   print $FH $self->_printSubText();
@@ -213,11 +225,11 @@ NO_TIME:
    }
 
    my $pos = int($self->{scale}/2) + $self->{barStart}-5;
-   my $t = "\e[".($self->{startRow}-1).";$self->{startCol}H";
+   my $t = "\033[".($self->{startRow}-1).";$self->{startCol}H";
    $t .= ' 'x($self->{barStart}+$self->{scale});
-   $t .= "\e[".($self->{startRow}-1).";${pos}H".$time;
+   $t .= "\033[".($self->{startRow}-1).";${pos}H".$time;
 
-   print $t;
+   print $FH $t;
    $self->{lastTime} = [&Time::HiRes::gettimeofday()];
 }
 
@@ -269,11 +281,11 @@ sub update {
 
   ## Make sure bar has correct color at its final state 
   if ($percent != 0){
-    $bar = "\e[$self->{startRow};$self->{barStart}H\e[K".$self->{fillColor}.($self->{char}x($count))."\e[0m";
-    $bar .= "\e[$self->{startRow};${startCol}H".$self->{barColor}.($self->{char}x($self->{scale}-$count))."\e[0m";
+    $bar = "\033[$self->{startRow};$self->{barStart}H\033[K".$self->{fillColor}.($self->{char}x($count))."\033[0m";
+    $bar .= "\033[$self->{startRow};${startCol}H".$self->{barColor}.($self->{char}x($self->{scale}-$count))."\033[0m";
   }
   else{
-    $bar = "\e[$self->{startRow};${startCol}H".$self->{barColor}.($self->{char}x($self->{scale}-$count))."\e[0m"; 
+    $bar = "\033[$self->{startRow};${startCol}H".$self->{barColor}.($self->{char}x($self->{scale}-$count))."\033[0m"; 
   }
 
   $bar .=  $self->_printPercent($percent);
@@ -311,8 +323,8 @@ sub reset {
 sub _printPercent {
   my ($self, $percent) = @_;
 
-  my $t = "\e[$self->{startRow};".($self->{barStart}+$self->{scale}+1)."H";
-  $t   .= "\e[37m$percent%       \e[0m";
+  my $t = "\033[$self->{startRow};".($self->{barStart}+$self->{scale}+1)."H";
+  $t   .= "\033[37m$percent%       \033[0m";
 
   return $t;
 }
@@ -347,8 +359,8 @@ sub _printSubText {
 
   $pos = 0 if $pos < 0;
 
-  $t  = "\e[".($self->{startRow}+1).";$self->{startCol}H\e[K";
-  $t .= "\e[".($self->{startRow}+1).";${pos}H".$self->{subText};
+  $t  = "\033[".($self->{startRow}+1).";$self->{startCol}H\033[K";
+  $t .= "\033[".($self->{startRow}+1).";${pos}H".$self->{subText};
 
   ## Restore original subText and length
   if ($subTemp){
@@ -360,7 +372,7 @@ sub _printSubText {
 }
 
 
-sub _get_max_width{
+sub _get_max_term{
    my ($self) = @_;
 
    ## suck in Term::Size, if possible
@@ -376,7 +388,7 @@ sub _get_max_width{
       }
    }
    else {
-      ($self->{maxCol}, undef) = &Term::Size::chars($self->{fh});
+      ($self->{maxCol}, $self->{maxRow}) = &Term::Size::chars($self->{fh});
    }
 }
 
@@ -432,6 +444,7 @@ This creates a new StatusBar object. It can take several parameters:
 
    startRow     - This indicates which row to place the bar at. Default is 1.
    startCol     - This indicates which column to place the bar at. Default is 1.
+   startPos     - This will replace startRow if specified. Currently takes ['bottom','top'].
    label        - This places text to the left of the status bar. Default is "Status: ".
    scale        - This indicates how long the bar is. Default is 40.
    totalItems   - This tells the bar how many items are being iterated. Default is 1.
@@ -440,8 +453,9 @@ This creates a new StatusBar object. It can take several parameters:
    subText      - Text to display below the status bar.
    subTextAlign - How to align subText ('left', 'center', 'right').
    reverse      - Status bar empties to 0% rather than fills to 100%.
-   barColor     - Base color of the status bar (default white -- \e[7;37m).
-   fillColor    - Fill color of the status bar (default blue -- \e[7;34m).
+   barColor     - Base color of the status bar (default white -- \033[7;37m).
+   fillColor    - Fill color of the status bar (default blue -- \033[7;34m).
+   colorTerm    - Specify if your terminal can handle colors. Default is 1.
    fh           - User-defined file handle.
    precision    - Formats percentage with decimals. Up to 4 places supported.
    showTime     - Shows approximate time to completion in "00:00:00" format.
@@ -496,13 +510,19 @@ Internal method to print the subText to the screen.
 
 Internal method to calculate and print estimated time to completion.
 
-=head2 B<_get_max_width()>
+=head2 B<_get_max_term()>
 
-Internal method to get the terminal's current width
+Internal method to get the terminal's current width and height.
 
 =head1 CHANGES
 
 =begin text 
+   2003-08-11
+      + Removed DESTROY()
+
+   2003-06-12
+      + Added new options: startPos and colorTerm.
+      + Changed escape sequence to \033.
 
    2003-06-11
       + Fixed divide-by-zero error in _calcTime().

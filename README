@@ -39,6 +39,7 @@ METHODS
 
        startRow     - This indicates which row to place the bar at. Default is 1.
        startCol     - This indicates which column to place the bar at. Default is 1.
+       startPos     - This will replace startRow if specified. Currently takes ['bottom','top'].
        label        - This places text to the left of the status bar. Default is "Status: ".
        scale        - This indicates how long the bar is. Default is 40.
        totalItems   - This tells the bar how many items are being iterated. Default is 1.
@@ -47,8 +48,9 @@ METHODS
        subText      - Text to display below the status bar.
        subTextAlign - How to align subText ('left', 'center', 'right').
        reverse      - Status bar empties to 0% rather than fills to 100%.
-       barColor     - Base color of the status bar (default white -- \e[7;37m).
-       fillColor    - Fill color of the status bar (default blue -- \e[7;34m).
+       barColor     - Base color of the status bar (default white -- \033[7;37m).
+       fillColor    - Fill color of the status bar (default blue -- \033[7;34m).
+       colorTerm    - Specify if your terminal can handle colors. Default is 1.
        fh           - User-defined file handle.
        precision    - Formats percentage with decimals. Up to 4 places supported.
        showTime     - Shows approximate time to completion in "00:00:00" format.
@@ -94,10 +96,14 @@ METHODS
   _calcTime()
     Internal method to calculate and print estimated time to completion.
 
-  _get_max_width()
-    Internal method to get the terminal's current width
+  _get_max_term()
+    Internal method to get the terminal's current width and height.
 
 CHANGES
+       2003-06-12
+          + Added new options: startPos and colorTerm.
+          + Changed escape sequence to \033.
+
        2003-06-11
           + Fixed divide-by-zero error in _calcTime().
           + Fixed bug in updateInc. Wasn't updating correctly.
