@@ -30,19 +30,24 @@
 			baseScale => 100,
 			start => 0,
 			maxCol => 0,
+			prevSubText => '',
+			subText => $params{subText} || '',
+			subTextAlign => $params{subTextAlign} || 'left',
 	  }, ref $class || $class;
 
       $self->setItems($params{totalItems}) if $params{totalItems};
 
   #################################################
-  # Check if scale exceeds current width of screen
+  # Check if scale exceeds current width of screen 
+  # and adjust accordingly. Not much we can do if 
+  # label exceeds screen width
   #################################################
  
       ($self->{maxCol}, undef) = Term::Size::chars *STDOUT{IO};
-      no Term::Size;
- 
-      if ($self->{scale} >= $self->{maxCol}){
-          $self->{scale} = int($self->{maxCol}*.85);
+      no Term::Size;  ## No sense keeping this around
+
+      if (($self->{scale} + length($self->{label}) + 6) >= $self->{maxCol}){
+          $self->{scale} = $self->{maxCol} - 6 - length($self->{label});
       }
 
       $SIG{INT} = \&{__PACKAGE__."::sigint"};
@@ -89,6 +94,23 @@
   }
 
 
+##################################
+# Sets the subText and redisplays
+##################################
+
+  sub subText {
+      my $self = shift;
+      my $newSubText = shift;
+
+      return $self->{subText} if !defined $newSubText;
+
+      if ($newSubText ne $self->{subText}){
+          $self->{subText} = $newSubText;
+          $self->_printSubText;
+      }
+  }
+
+
 ##########################################
 # Set totalItems, curItems, and updateInc 
 ##########################################
@@ -98,8 +120,19 @@
       $self->{totalItems} = $self->{curItems} = shift if !$self->{count};
 
       if ($self->{totalItems} > $self->{baseScale}){
-          $self->{updateInc} = $self->{totalItems}/$self->{baseScale};
+          $self->{updateInc} = int($self->{totalItems}/$self->{baseScale});
       }
+  }
+
+
+####################################
+# Adds more text to current subText
+####################################
+
+  sub addSubText {
+      my $self = shift;
+      $self->{prevSubText} = $self->{subText} if !$self->{prevSubText};
+      $self->{subText} = $self->{prevSubText} . shift();
   }
 
 
@@ -118,6 +151,8 @@
       print WHITE REVERSE $self->{char}x$self->{scale};
 
       $self->_printPercent(0);
+      $self->_printSubText();
+
       $self->{start}++;
   }
 
@@ -176,6 +211,7 @@
           print BLUE REVERSE $self->{char}x$count;
       }
 
+      $self->_printSubText;
       $self->_printPercent($percent);
   }
 
@@ -188,7 +224,7 @@
 
   sub reset {
       my $self = shift;
-      @$self{qw(count start)} = (0,0);
+      @$self{qw(count start prevSubText)} = (0,0,'');
   }
 
 
@@ -203,6 +239,36 @@
       locate $self->{startRow}, length($self->{label})+$self->{scale}+2;
       print WHITE "$percent%";
   }
+
+
+########################################
+# Calculates position to place sub-text
+########################################
+
+  sub _printSubText {
+      my $self = shift;
+      my $pos;
+
+      return if !$self->{subText};
+
+      if ($self->{subTextAlign} eq 'center'){
+          my $tmp = int($self->{scale}/2) + length($self->{label});
+          $pos = $tmp - int(length($self->{subText})/2);
+      }
+      elsif ($self->{subTextAlign} eq 'right'){
+          $pos = length($self->{label}) + $self->{scale} + $self->{startCol} - length($self->{subText});
+      }
+      else{
+          $pos = $self->{startCol}+length($self->{label});
+      }
+
+      locate $self->{startRow}+1, $self->{startCol};
+      print ' 'x(length($self->{label})+$self->{scale});
+
+      locate $self->{startRow}+1, $pos;
+      print $self->{subText};
+  }
+
 
 1;
 __END__
@@ -253,12 +319,14 @@ bar does not extend beyond the terminal's width.
 
 This creates a new StatusBar object. It can take several parameters:
 
-	startRow   - This indicates which row to place the bar at. Default is 1.
-	startCol   - This indicates which column to place the bar at. Default is 1.
-	label      - This places text to the left of the status bar. Default is "Status: ".
-	scale      - This indicates how long the bar is. Default is 40.
-	totalItems - This tells the bar how many items are being iterated. Default is 1.
-	char       - This indicates which character to use for the base bar. Default is ' ' (space).
+	startRow     - This indicates which row to place the bar at. Default is 1.
+	startCol     - This indicates which column to place the bar at. Default is 1.
+	label        - This places text to the left of the status bar. Default is "Status: ".
+	scale        - This indicates how long the bar is. Default is 40.
+	totalItems   - This tells the bar how many items are being iterated. Default is 1.
+	char         - This indicates which character to use for the base bar. Default is ' ' (space).
+	subText      - Text to display below the status bar
+	subTextAlign - How to align subText ('left', 'center', 'right')
 
 =head2 setItems(#)
 
@@ -267,6 +335,18 @@ $obj->{totalItems}, second it sets an internal counter 'curItems', last it
 determins the update increment.
 
 This method must be used, unless you passed totalItems to the constructor.
+
+=head2 subText('text')
+
+Sets subText and redisplays it if necessary. If 'text' is not passed in, the current 
+value of $obj->{subText} is returned. 
+
+=head2 addSubText('text')
+
+This takes the original value of $obj->{subText} and concats 'text' to it 
+each time it is called. This might not work along side subText() since they 
+both change the value of $obj->{subText}. Might cause subText() to update 
+more frequently than is necessary and cause significant speed decreases in code. 
 
 =head2 start()
 
@@ -284,7 +364,11 @@ This resets the bar's internal state and makes it available for reuse.
 
 =head2 _printPercent()
 
-Internal sub to print the current percentage to the screen.
+Internal method to print the current percentage to the screen.
+
+=head2 _printSubText()
+
+Internal method to print the subText to the screen.
 
 =head1 AUTHOR
 

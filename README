@@ -37,12 +37,14 @@ METHODS
 
     This creates a new StatusBar object. It can take several parameters:
 
-            startRow   - This indicates which row to place the bar at. Default is 1.
-            startCol   - This indicates which column to place the bar at. Default is 1.
-            label      - This places text to the left of the status bar. Default is "Status: ".
-            scale      - This indicates how long the bar is. Default is 40.
-            totalItems - This tells the bar how many items are being iterated. Default is 1.
-            char       - This indicates which character to use for the base bar. Default is ' ' (space).
+            startRow     - This indicates which row to place the bar at. Default is 1.
+            startCol     - This indicates which column to place the bar at. Default is 1.
+            label        - This places text to the left of the status bar. Default is "Status: ".
+            scale        - This indicates how long the bar is. Default is 40.
+            totalItems   - This tells the bar how many items are being iterated. Default is 1.
+            char         - This indicates which character to use for the base bar. Default is ' ' (space).
+            subText      - Text to display below the status bar
+            subTextAlign - How to align subText ('left', 'center', 'right')
 
   setItems(#)
 
@@ -52,6 +54,19 @@ METHODS
 
     This method must be used, unless you passed totalItems to the
     constructor.
+
+  subText('text')
+
+    Sets subText and redisplays it if necessary. If 'text' is not passed in,
+    the current value of $obj->{subText} is returned.
+
+  addSubText('text')
+
+    This takes the original value of $obj->{subText} and concats 'text' to
+    it each time it is called. This might not work along side subText()
+    since they both change the value of $obj->{subText}. Might cause
+    subText() to update more frequently than is necessary and cause
+    significant speed decreases in code.
 
   start()
 
@@ -69,7 +84,11 @@ METHODS
 
   _printPercent()
 
-    Internal sub to print the current percentage to the screen.
+    Internal method to print the current percentage to the screen.
+
+  _printSubText()
+
+    Internal method to print the subText to the screen.
 
 AUTHOR
     Shay Harding <sharding@ccbill.com>

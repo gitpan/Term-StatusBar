@@ -1,3 +1,15 @@
+4/2/2002
+	+ Fixed code in new() that determines screen width and 
+	  appropriate adjustments to make. Now takes all text 
+	  length into account when determining the 'scale'.
+
+	+ Fixed setItems() so that updateInc does not contain 
+	  decimals.
+
+	+ Added ability to set sub-text below the status bar.
+
 4/1/2002
 	+ Added a README and CHANGELOG file
 	+ Added some tests
+
+
