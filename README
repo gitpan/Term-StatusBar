@@ -1,3 +1,4 @@
+NAME
     Term::StatusBar - Dynamic progress bar
 
 SYNOPSIS
@@ -69,10 +70,14 @@ METHODS
   start()
     This method 'draws' the initial status bar on the screen.
 
-  update()
+  update($items)
     This is really the core of the module. This updates the status bar and
     gives the appearance of movement. It really just redraws the entire
     thing, adding any new incremental updates needed.
+
+    You should only pass $items in when processing a file with an uneven
+    number of bytes per line. This is so you don't have to initially read
+    the file in to get a line count.
 
   reset([\%options])
     This resets the bar's internal state and makes it available for re-use.
@@ -86,29 +91,56 @@ METHODS
   _printSubText()
     Internal method to print the subText to the screen.
 
+  _calcTime()
+    Internal method to calculate and print estimated time to completion.
+
+  _get_max_width()
+    Internal method to get the terminal's current width
+
 CHANGES
+       2003-06-11
+          + Fixed divide-by-zero error in _calcTime().
+          + Fixed bug in updateInc. Wasn't updating correctly.
+          + Fixed bug with subText() and _printSubText() being "out-of-sync".
+             - Caused text to not be displayed at the appropriate time.
+          + Fixed bug with long subTexts not being cleared.
+             - Caused extra characters to remain on the screen.
+          + Prevent long subText values from wrapping by truncating to StatusBar width.
+             - This should work with all subTextAlign types.
+          + update() can now take an argument of items processed. This should only be used when an 
+            uneven number of items are processed per iteration. An example would be the number of bytes 
+            a line in a file contains.
+
        2003-05-06
-          Fixed bug where subTextLength was not being re-evaluated.
-          Bar's final state color is now appropriate. When emptied to 0% is was getting re-filled.
-          Added "no warnings 'portable" so Perl 5.8 would be happy.
-          Added ability to send output to user-defined file handle.
-          Added precision for percentage output to a max of 4 decimal places. Default is 0.
-          Can now specify a different 'updateInc', which adjusts how often the bar is updated. Default is every 1%.
-          Can now indicate if you want to see approximate time to completion.  
+          + Fixed bug where subTextLength was not being re-evaluated.
+          + Bar's final state color is now appropriate. When emptied to 0% is was getting re-filled.
+          + Added "no warnings 'portable" so Perl 5.8 would be happy.
+          + Added ability to send output to user-defined file handle.
+          + Added precision for percentage output to a max of 4 decimal places. Default is 0.
+          + Can now specify a different 'updateInc', which adjusts how often the bar is updated. Default is every 1%.
+          + Can now indicate if you want to see approximate time to completion.
 
        2003-01-27
-          Added 'reverse' option to constructor.
-          Cleaned up code a bit.
-          Only update items when needed (subText was being updated even if it had not changed).
-          Pre-compute lengths and use static value rather than calling length() every iteration.
+          + Added 'reverse' option to constructor.
+          + Cleaned up code a bit.
+          + Only update items when needed (subText was being updated even if it had not changed).
+          + Pre-compute lengths and use static value rather than calling length() every iteration.
 
 AUTHOR
     Shay Harding <sharding@ccbill.com>
+
+NOTES
+    Has only been tested on Linux platform. I would like to hear of
+    successes/problems on other platforms. Patches, ideas and comments are
+    always welcome.
+
+ACKNOWLEDGEMENTS
+    Scott Wiersdorf's Term::Twiddle for the _get_max_width() function.
 
 COPYRIGHT
     This library is free software; you may redistribute and/or modify it
     under the same terms as Perl itself.
 
 SEE ALSO
-    Term::Size, Term::Report
+    Term::Report
 

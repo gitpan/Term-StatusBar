@@ -3,28 +3,29 @@ no warnings 'portable';
 
 $|++;
 require 5.6.0; 
-use Term::Size 'chars';
-use Time::HiRes qw(tv_interval gettimeofday);
 our ($AUTOLOAD, $FH);
-our $VERSION = do { my @r=(q$Revision: 1.3 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+our $VERSION = 1.16;
 
 
 sub new {
-  my ($class, %params) = @_;
+   my ($class, %params) = @_;
 
-  my $self = bless{
+   my $self = bless{
       startRow      => $params{startRow} || 1,
       startCol      => $params{startCol} || 1,
       label         => $params{label} || 'Status: ',
       scale         => $params{scale} || 40,
       totalItems    => $params{totalItems} || 1,
+      avgItems      => 1,
+      updateCount   => 0,
       char          => $params{char} || ' ',
       count         => 0,
+      itemsPP       => 1,
       updateInc     => int($params{updateInc}) || 1,
       curItems      => $params{totalItems} || 1,
       baseScale     => 100,
       start         => 0,
-      maxCol        => 0,
+      maxCol        => 80,
       prevSubText   => undef,
       subText       => undef,
       subTextAlign  => $params{subTextAlign} || 'left',
@@ -39,30 +40,38 @@ sub new {
       showTime      => $params{showTime} || 0,
       lastTime      => undef, 
       itemAccum     => $params{totalItems} || 1,
-  }, ref $class || $class;
+   }, ref $class || $class;
 
-  $FH = $self->{fh};
+   $FH = $self->{fh};
 
-  $self->subText($params{subText});
-  $self->{subTextLength} = length($self->{subText});
+   $self->subText($params{subText});
+   $self->setItems($params{totalItems}) if $params{totalItems};
+   $self->{barStart} = length($self->{label})+1;
 
-  $self->setItems($params{totalItems}) if $params{totalItems};
-  $self->{barStart} = length($self->{label})+1;
+   ## Check if scale exceeds current width of screen 
+   ## and adjust accordingly. Not much we can do if 
+   ## label exceeds screen width
+   $self->_get_max_width();
 
-  ## Check if scale exceeds current width of screen 
-  ## and adjust accordingly. Not much we can do if 
-  ## label exceeds screen width
-  $self->{maxCol} = Term::Size::chars;
+   if (($self->{scale} + $self->{barStart} + 5) >= $self->{maxCol}){
+      $self->{scale} = $self->{maxCol} - 5 - $self->{barStart};
+   }
 
-  if (($self->{scale} + $self->{barStart} + 5) >= $self->{maxCol}){
-     $self->{scale} = $self->{maxCol} - 5 - $self->{barStart};
-  }
+   if ($self->{precision} > 4){ $self->{precision} = 4; }
 
-  if ($self->{precision} > 4){ $self->{precision} = 4; }
-  if ($self->{showTime}){ $self->{startRow}++; }
+   if ($self->{showTime}){
+      eval { require Time::HiRes };
 
-  $SIG{INT} = \&{__PACKAGE__."::sigint"};
-  return $self;
+      if (!$@){
+         $self->{startRow}++;
+      }
+      else{
+         $self->{showTime} = 0;
+      }
+   }
+
+   $SIG{INT} = \&{__PACKAGE__."::sigint"};
+   return $self;
 }
 
 sub DESTROY { sigint(); }
@@ -106,8 +115,8 @@ sub subText {
   if ($newSubText ne $self->{subText}){
     $self->{subText} = $newSubText;
     $self->{subTextLength} = length($newSubText);
-    print $FH $self->_printSubText();
     $self->{subTextChange} = 1;
+    print $FH $self->_printSubText();
   }
   else{
     $self->{subTextChange} = 0;
@@ -116,7 +125,7 @@ sub subText {
 
 
 ##
-## Set totalItems, curItems, and updateInc 
+## Set totalItems, curItems, and itemsPP 
 ##
 sub setItems {
   my ($self, $num) = @_;
@@ -126,7 +135,7 @@ sub setItems {
   $self->{totalItems} = $self->{curItems} = abs($num) if !$self->{count};
 
   if ($self->{totalItems} > $self->{baseScale}){
-    $self->{updateInc} = int($self->{totalItems}/$self->{baseScale});
+    $self->{itemsPP} = int($self->{totalItems}/$self->{baseScale});
   }
 }
 
@@ -165,16 +174,23 @@ sub start {
 ## Updates approximate time
 ##
 
-sub calcTime {
+sub _calcTime {
    my ($self) = @_;
    return if !$self->{showTime};
    my ($time);
 
    if (!$self->{reverse} && $self->{lastTime}){
-      my $tp = tv_interval($self->{lastTime});
+      my $tp = &Time::HiRes::tv_interval($self->{lastTime});
       my $tmp = $self->{itemAccum};
       $self->{itemAccum} = $self->{totalItems} - $self->{count};
-      $tp = ($tp/($tmp-$self->{itemAccum}))*$self->{itemAccum};
+
+      ## Prevent divide by zero errors
+      if ($tmp-$self->{itemAccum} > 0){
+         $tp = ($tp/($tmp-$self->{itemAccum}))*$self->{itemAccum};
+      }
+      else{
+         goto NO_TIME;
+      }
 
       my ($hours, $mins, $secs) = ("00")x3;
       if ($tp >= 3600){
@@ -192,6 +208,7 @@ sub calcTime {
       $time = "$hours:$mins:$secs";
    }
    else{
+NO_TIME:
       $time = "00:00:00";
    }
 
@@ -201,7 +218,7 @@ sub calcTime {
    $t .= "\e[".($self->{startRow}-1).";${pos}H".$time;
 
    print $t;
-   $self->{lastTime} = [gettimeofday];
+   $self->{lastTime} = [&Time::HiRes::gettimeofday()];
 }
 
 
@@ -209,29 +226,40 @@ sub calcTime {
 ## Updates the status bar on screen 
 ##
 sub update {
-  my ($self) = @_;
+  my ($self, $items) = @_;
   $self->start if !$self->{start};
-
-  $self->calcTime();
+  $self->{updateCount}++;
 
   ## Determines if an update is needed
-  if ((--$self->{curItems} % $self->{updateInc})){
-      return;
-  }
+  if (!$items){
+    $self->{count}++;
 
-  ## Figure out how to update the bar and do minor fixes 
-  ## to the percentage
-  $self->{count} += $self->{updateInc};
+    if (--$self->{curItems} % ($self->{itemsPP}*int($self->{updateInc}))){
+      return;
+    }
+  }
+  else{
+    ## This stuff is for uneven updates, like processing files by line
+    $self->{curItems} -= $items;
+    $self->{count} += $items;
+    $self->{avgItems} = int($self->{count}/$self->{updateCount});
+
+    if ($self->{curItems} % ($self->{avgItems}*int($self->{updateInc}))){
+      return;
+    }
+  }
 
   my $percent = $self->{count}/$self->{totalItems};
   $percent = 1-$percent if $self->{reverse};
   my $count = int($percent*$self->{scale});
   $percent = sprintf("%.$self->{precision}f", $percent*100);
 
+  $self->_calcTime();
+
   ## Due to calls to int(), the numbers sometimes do not work out 
   ## exactly. If the bar is suppose to be full and at 100% this 
   ## makes sure it happens
-  if ($self->{totalItems} - $self->{count} < $self->{updateInc}){
+  if ($self->{totalItems} - $self->{count} < $self->{itemsPP}){
     $count = $self->{scale};
     $percent = $self->{reverse}?0:100;
   }
@@ -295,9 +323,16 @@ sub _printPercent {
 ##
 sub _printSubText {
   my ($self) = @_;
-  my ($pos, $t);
+  my ($pos, $t, $subTemp);
 
   return if !$self->{subText} || !$self->{subTextChange};
+
+  ## Truncate subText if necessary
+  if ($pos+$self->{subTextLength} > $self->{scale}+$self->{barStart}){
+    $subTemp = $self->{subText};
+    $self->{subText} = substr($self->{subText}, 0, $self->{subTextLength}-($self->{scale}+$self->{barStart})).'...';
+    $self->{subTextLength} = length($self->{subText});
+  }
 
   if ($self->{subTextAlign} eq 'center'){
     my $tmp = int($self->{scale}/2) + $self->{barStart};
@@ -310,18 +345,46 @@ sub _printSubText {
     $pos = $self->{startCol}+$self->{barStart};
   }
 
-  $t  = "\e[".($self->{startRow}+1).";$self->{startCol}H";
-  $t .= ' 'x($self->{barStart}+$self->{scale});
+  $pos = 0 if $pos < 0;
+
+  $t  = "\e[".($self->{startRow}+1).";$self->{startCol}H\e[K";
   $t .= "\e[".($self->{startRow}+1).";${pos}H".$self->{subText};
+
+  ## Restore original subText and length
+  if ($subTemp){
+    $self->{subText} = $subTemp;
+    $self->{subTextLength} = length($self->{subText});
+  }
 
   return $t;
 }
 
 
+sub _get_max_width{
+   my ($self) = @_;
+
+   ## suck in Term::Size, if possible
+   eval { require Term::Size };
+
+   ## no Term::Size; try using tput to find terminal width
+   if($@){
+   ## find tput via poor man's "which"
+      for my $path (split /:/, $ENV{'PATH'}){
+         next if !(-x "$path/tput");
+         chomp($self->{maxCol} = `$path/tput cols`);
+         last;
+      }
+   }
+   else {
+      ($self->{maxCol}, undef) = &Term::Size::chars($self->{fh});
+   }
+}
+
+
 1;
 __END__
-
 =pod
+
 =head1 NAME
 
 Term::StatusBar - Dynamic progress bar
@@ -363,7 +426,7 @@ is sent to STDOUT by default.
 
 =head1 METHODS
 
-=head2 new(parameters)
+=head2 B<new(parameters)>
 
 This creates a new StatusBar object. It can take several parameters:
 
@@ -383,7 +446,7 @@ This creates a new StatusBar object. It can take several parameters:
    precision    - Formats percentage with decimals. Up to 4 places supported.
    showTime     - Shows approximate time to completion in "00:00:00" format.
 
-=head2 setItems(#)
+=head2 B<setItems(#)>
 
 This method does several things with the number that is passed in. First it sets 
 $obj->{totalItems}, second it sets an internal counter 'curItems', last it 
@@ -391,60 +454,99 @@ determines the update increment.
 
 This method must be used, unless you pass totalItems to the constructor.
 
-=head2 subText('text')
+=head2 B<subText('text')>
 
 Sets subText and redisplays it if necessary.
 
-=head2 addSubText('text')
+=head2 B<addSubText('text')>
 
 This takes the original value of $obj->{subText} and concats 'text' to it 
 each time it is called. Text is then re-displayed to screen. 
 
-=head2 start()
+=head2 B<start()>
 
 This method 'draws' the initial status bar on the screen.
 
-=head2 update()
+=head2 B<update($items)>
 
 This is really the core of the module. This updates the status bar and 
 gives the appearance of movement. It really just redraws the entire thing, 
 adding any new incremental updates needed.
 
-=head2 reset([\%options])
+You should only pass $items in when processing a file with an uneven number of 
+bytes per line. This is so you don't have to initially read the file in to get 
+a line count.
+
+=head2 B<reset([\%options])>
 
 This resets the bar's internal state and makes it available for re-use. If 
 the optional hash ref is passed in, the status bar can be filled with 
 specified values. The keys are interpreted as function calls on the status 
 bar object with the values as parameters.
 
-=head2 _printPercent()
+=head2 B<_printPercent()>
 
 Internal method to print the current percentage to the screen.
 
-=head2 _printSubText()
+=head2 B<_printSubText()>
 
 Internal method to print the subText to the screen.
 
+=head2 B<_calcTime()>
+
+Internal method to calculate and print estimated time to completion.
+
+=head2 B<_get_max_width()>
+
+Internal method to get the terminal's current width
+
 =head1 CHANGES
 
+=begin text 
+
+   2003-06-11
+      + Fixed divide-by-zero error in _calcTime().
+      + Fixed bug in updateInc. Wasn't updating correctly.
+      + Fixed bug with subText() and _printSubText() being "out-of-sync".
+         - Caused text to not be displayed at the appropriate time.
+      + Fixed bug with long subTexts not being cleared.
+         - Caused extra characters to remain on the screen.
+      + Prevent long subText values from wrapping by truncating to StatusBar width.
+         - This should work with all subTextAlign types.
+      + update() can now take an argument of items processed. This should only be used when an 
+        uneven number of items are processed per iteration. An example would be the number of bytes 
+        a line in a file contains.
+
    2003-05-06
-      Fixed bug where subTextLength was not being re-evaluated.
-      Bar's final state color is now appropriate. When emptied to 0% is was getting re-filled.
-      Added "no warnings 'portable" so Perl 5.8 would be happy.
-      Added ability to send output to user-defined file handle.
-      Added precision for percentage output to a max of 4 decimal places. Default is 0.
-      Can now specify a different 'updateInc', which adjusts how often the bar is updated. Default is every 1%.
-      Can now indicate if you want to see approximate time to completion.  
+      + Fixed bug where subTextLength was not being re-evaluated.
+      + Bar's final state color is now appropriate. When emptied to 0% is was getting re-filled.
+      + Added "no warnings 'portable" so Perl 5.8 would be happy.
+      + Added ability to send output to user-defined file handle.
+      + Added precision for percentage output to a max of 4 decimal places. Default is 0.
+      + Can now specify a different 'updateInc', which adjusts how often the bar is updated. Default is every 1%.
+      + Can now indicate if you want to see approximate time to completion.
 
    2003-01-27
-      Added 'reverse' option to constructor.
-      Cleaned up code a bit.
-      Only update items when needed (subText was being updated even if it had not changed).
-      Pre-compute lengths and use static value rather than calling length() every iteration.
+      + Added 'reverse' option to constructor.
+      + Cleaned up code a bit.
+      + Only update items when needed (subText was being updated even if it had not changed).
+      + Pre-compute lengths and use static value rather than calling length() every iteration.
+
+=end text
 
 =head1 AUTHOR
 
 Shay Harding E<lt>sharding@ccbill.comE<gt>
+
+=head1 NOTES 
+
+Has only been tested on Linux platform. I would like to hear of successes/problems on other platforms.
+Patches, ideas and comments are always welcome.
+
+=head1 ACKNOWLEDGEMENTS
+
+Scott Wiersdorf's B<Term::Twiddle> for the _get_max_width() function.
+
 
 =head1 COPYRIGHT
 
@@ -454,7 +556,7 @@ terms as Perl itself.
 
 =head1 SEE ALSO
 
-L<Term::Size>, L<Term::Report>
+L<Term::Report>
 
 =cut
 
