@@ -1,10 +1,12 @@
-  package Term::StatusBar;
+package Term::StatusBar;
+no warnings 'portable';
 
-  $|++;
-  require 5.6.0; 
-  use Term::Size;
-  our $AUTOLOAD;
-  our $VERSION = do { my @r=(q$Revision: 1.12 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+$|++;
+require 5.6.0; 
+use Term::Size 'chars';
+use Time::HiRes qw(tv_interval gettimeofday);
+our ($AUTOLOAD, $FH);
+our $VERSION = do { my @r=(q$Revision: 1.3 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
 
 
 sub new {
@@ -18,7 +20,7 @@ sub new {
       totalItems    => $params{totalItems} || 1,
       char          => $params{char} || ' ',
       count         => 0,
-      updateInc     => 1,
+      updateInc     => int($params{updateInc}) || 1,
       curItems      => $params{totalItems} || 1,
       baseScale     => 100,
       start         => 0,
@@ -31,8 +33,15 @@ sub new {
       fillColor     => $params{fillColor} || "\e[7;34m",
       barStart      => undef,
       subTextChange => undef,
-      subTextLength => undef, 
+      subTextLength => undef,
+      fh            => $params{fh} || *STDOUT,
+      precision     => $params{precision} || 0,
+      showTime      => $params{showTime} || 0,
+      lastTime      => undef, 
+      itemAccum     => $params{totalItems} || 1,
   }, ref $class || $class;
+
+  $FH = $self->{fh};
 
   $self->subText($params{subText});
   $self->{subTextLength} = length($self->{subText});
@@ -49,8 +58,10 @@ sub new {
      $self->{scale} = $self->{maxCol} - 5 - $self->{barStart};
   }
 
-  $SIG{INT} = \&{__PACKAGE__."::sigint"};
+  if ($self->{precision} > 4){ $self->{precision} = 4; }
+  if ($self->{showTime}){ $self->{startRow}++; }
 
+  $SIG{INT} = \&{__PACKAGE__."::sigint"};
   return $self;
 }
 
@@ -62,7 +73,7 @@ sub DESTROY { sigint(); }
 ## need to be able to reset the display.
 ##
 sub sigint {
-  print "\n\n";
+  print $FH "\n\n";
   exit;
 }
 
@@ -94,7 +105,8 @@ sub subText {
 
   if ($newSubText ne $self->{subText}){
     $self->{subText} = $newSubText;
-    print $self->_printSubText();
+    $self->{subTextLength} = length($newSubText);
+    print $FH $self->_printSubText();
     $self->{subTextChange} = 1;
   }
   else{
@@ -138,14 +150,58 @@ sub addSubText {
 sub start {
   my ($self) = @_;
 
-  print "\e[$self->{startRow};$self->{startCol}H", (' 'x($self->{maxCol}-$self->{startCol}));
-  print "\e[$self->{startRow};$self->{startCol}H$self->{label}";
-  print $self->{barColor}, ($self->{char}x$self->{scale}), "\e[0m";
+  print $FH "\e[$self->{startRow};$self->{startCol}H", (' 'x($self->{maxCol}-$self->{startCol}));
+  print $FH "\e[$self->{startRow};$self->{startCol}H$self->{label}";
+  print $FH $self->{barColor}, ($self->{char}x$self->{scale}), "\e[0m";
 
-  print $self->_printPercent($self->{reverse}?100:0);
-  print $self->_printSubText();
+  print $FH $self->_printPercent($self->{reverse}?100:0);
+  print $FH $self->_printSubText();
 
   $self->{start}++;
+}
+
+
+##
+## Updates approximate time
+##
+
+sub calcTime {
+   my ($self) = @_;
+   return if !$self->{showTime};
+   my ($time);
+
+   if (!$self->{reverse} && $self->{lastTime}){
+      my $tp = tv_interval($self->{lastTime});
+      my $tmp = $self->{itemAccum};
+      $self->{itemAccum} = $self->{totalItems} - $self->{count};
+      $tp = ($tp/($tmp-$self->{itemAccum}))*$self->{itemAccum};
+
+      my ($hours, $mins, $secs) = ("00")x3;
+      if ($tp >= 3600){
+         $hours = sprintf("%02d", int($tp/3600));
+         $tp -= $hours*3600;
+      }
+      if ($tp >= 60){
+         $mins = sprintf("%02d", int($tp/60));
+         $tp -= $mins*60;
+      }
+      if ($tp >= 1){
+         $secs = sprintf("%02d", int($tp));
+      }
+
+      $time = "$hours:$mins:$secs";
+   }
+   else{
+      $time = "00:00:00";
+   }
+
+   my $pos = int($self->{scale}/2) + $self->{barStart}-5;
+   my $t = "\e[".($self->{startRow}-1).";$self->{startCol}H";
+   $t .= ' 'x($self->{barStart}+$self->{scale});
+   $t .= "\e[".($self->{startRow}-1).";${pos}H".$time;
+
+   print $t;
+   $self->{lastTime} = [gettimeofday];
 }
 
 
@@ -154,8 +210,9 @@ sub start {
 ##
 sub update {
   my ($self) = @_;
-
   $self->start if !$self->{start};
+
+  $self->calcTime();
 
   ## Determines if an update is needed
   if ((--$self->{curItems} % $self->{updateInc})){
@@ -169,7 +226,7 @@ sub update {
   my $percent = $self->{count}/$self->{totalItems};
   $percent = 1-$percent if $self->{reverse};
   my $count = int($percent*$self->{scale});
-  $percent = int($percent*100);
+  $percent = sprintf("%.$self->{precision}f", $percent*100);
 
   ## Due to calls to int(), the numbers sometimes do not work out 
   ## exactly. If the bar is suppose to be full and at 100% this 
@@ -180,13 +237,21 @@ sub update {
   }
 
   my $startCol = $self->{barStart}+$count;
-  my $bar = "\e[$self->{startRow};$self->{barStart}H\e[K".$self->{fillColor}.($self->{char}x($count))."\e[0m";
-  $bar .= "\e[$self->{startRow};${startCol}H".$self->{barColor}.($self->{char}x($self->{scale}-$count))."\e[0m";
+  my $bar;
+
+  ## Make sure bar has correct color at its final state 
+  if ($percent != 0){
+    $bar = "\e[$self->{startRow};$self->{barStart}H\e[K".$self->{fillColor}.($self->{char}x($count))."\e[0m";
+    $bar .= "\e[$self->{startRow};${startCol}H".$self->{barColor}.($self->{char}x($self->{scale}-$count))."\e[0m";
+  }
+  else{
+    $bar = "\e[$self->{startRow};${startCol}H".$self->{barColor}.($self->{char}x($self->{scale}-$count))."\e[0m"; 
+  }
 
   $bar .=  $self->_printPercent($percent);
   $bar .=  $self->_printSubText();
 
-  print $bar; 
+  print $FH $bar; 
 }
 
 
@@ -219,7 +284,7 @@ sub _printPercent {
   my ($self, $percent) = @_;
 
   my $t = "\e[$self->{startRow};".($self->{barStart}+$self->{scale}+1)."H";
-  $t   .= "\e[37m$percent%  \e[0m";
+  $t   .= "\e[37m$percent%       \e[0m";
 
   return $t;
 }
@@ -294,7 +359,7 @@ Term::StatusBar - Dynamic progress bar
 Term::StatusBar provides an easy way to create a terminal status bar, 
 much like those found in a graphical environment. Term::Size is used to
 ensure the bar does not extend beyond the terminal's width. All outout 
-is sent to STDOUT.
+is sent to STDOUT by default.
 
 =head1 METHODS
 
@@ -308,19 +373,23 @@ This creates a new StatusBar object. It can take several parameters:
    scale        - This indicates how long the bar is. Default is 40.
    totalItems   - This tells the bar how many items are being iterated. Default is 1.
    char         - This indicates which character to use for the base bar. Default is ' ' (space).
-   subText      - Text to display below the status bar
-   subTextAlign - How to align subText ('left', 'center', 'right')
-   reverse      - Status bar empties to 0% rather than fills to 100%
-   barColor     - Base color of the status bar (default white -- \e[7;37m)
-   fillColor    - Fill color of the status bar (default blue -- \e[7;34m)
+   updateInc    - Updates bar every X%. Default is every 1%.
+   subText      - Text to display below the status bar.
+   subTextAlign - How to align subText ('left', 'center', 'right').
+   reverse      - Status bar empties to 0% rather than fills to 100%.
+   barColor     - Base color of the status bar (default white -- \e[7;37m).
+   fillColor    - Fill color of the status bar (default blue -- \e[7;34m).
+   fh           - User-defined file handle.
+   precision    - Formats percentage with decimals. Up to 4 places supported.
+   showTime     - Shows approximate time to completion in "00:00:00" format.
 
 =head2 setItems(#)
 
 This method does several things with the number that is passed in. First it sets 
 $obj->{totalItems}, second it sets an internal counter 'curItems', last it 
-determins the update increment.
+determines the update increment.
 
-This method must be used, unless you passed totalItems to the constructor.
+This method must be used, unless you pass totalItems to the constructor.
 
 =head2 subText('text')
 
@@ -357,11 +426,21 @@ Internal method to print the current percentage to the screen.
 Internal method to print the subText to the screen.
 
 =head1 CHANGES
-2003-01-27
-  Added 'reverse' option to constructor
-  Cleaned up code a bit
-  Only update items when needed (subText was being updated even if it had not changed).
-  Pre-compute lengths and use static value rather than calling length() ever iteration.
+
+   2003-05-06
+      Fixed bug where subTextLength was not being re-evaluated.
+      Bar's final state color is now appropriate. When emptied to 0% is was getting re-filled.
+      Added "no warnings 'portable" so Perl 5.8 would be happy.
+      Added ability to send output to user-defined file handle.
+      Added precision for percentage output to a max of 4 decimal places. Default is 0.
+      Can now specify a different 'updateInc', which adjusts how often the bar is updated. Default is every 1%.
+      Can now indicate if you want to see approximate time to completion.  
+
+   2003-01-27
+      Added 'reverse' option to constructor.
+      Cleaned up code a bit.
+      Only update items when needed (subText was being updated even if it had not changed).
+      Pre-compute lengths and use static value rather than calling length() every iteration.
 
 =head1 AUTHOR
 
