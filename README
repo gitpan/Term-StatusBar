@@ -1,0 +1,83 @@
+NAME
+    Term::StatusBar - Dynamic progress bar
+
+SYNOPSIS
+        use Term::StatusBar;
+
+        my $status = new Term::StatusBar (
+                        label => 'My Status: ',
+                        totalItems => 10,  ## Equiv to $status->setItems(10)
+        );
+
+        $status->start;  ## Optional, but recommended
+
+        doSomething(10);
+
+        $status->reset;  ## Resets internal state
+        $status->label('New Status: ');  ## Reuse current object with new data
+        $status->char('|');
+
+        doSomething(20);
+
+        sub doSomething {
+            $status->setItems($_[0]);
+            for (1..$_[0]){
+                sleep 1;
+                $status->update;  ## Will call $status->start() if needed
+            }
+        }
+
+DESCRIPTION
+    Term::StatusBar uses Term::ANSIScreen for cursor positioning and to give
+    the 'illusion' that the bar is moving. Term::Size is used to ensure the
+    bar does not extend beyond the terminal's width.
+
+METHODS
+  new(parameters)
+
+    This creates a new StatusBar object. It can take several parameters:
+
+            startRow   - This indicates which row to place the bar at. Default is 1.
+            startCol   - This indicates which column to place the bar at. Default is 1.
+            label      - This places text to the left of the status bar. Default is "Status: ".
+            scale      - This indicates how long the bar is. Default is 40.
+            totalItems - This tells the bar how many items are being iterated. Default is 1.
+            char       - This indicates which character to use for the base bar. Default is ' ' (space).
+
+  setItems(#)
+
+    This method does several things with the number that is passed in. First
+    it sets $obj->{totalItems}, second it sets an internal counter
+    'curItems', last it determins the update increment.
+
+    This method must be used, unless you passed totalItems to the
+    constructor.
+
+  start()
+
+    This method 'draws' the initial status bar on the screen.
+
+  update()
+
+    This is really the core of the module. This updates the status bar and
+    gives the appearance of movement. It really just redraws the entire
+    thing, adding any new incremental updates needed.
+
+  reset()
+
+    This resets the bar's internal state and makes it available for reuse.
+
+  _printPercent()
+
+    Internal sub to print the current percentage to the screen.
+
+AUTHOR
+    Shay Harding <sharding@ccbill.com>
+
+COPYRIGHT
+    This library is free software; you may redistribute and/or modify it
+    under the same terms as Perl itself.
+
+SEE ALSO
+    the Term::Size manpage, the Term::ANSIScreen manpage
+
