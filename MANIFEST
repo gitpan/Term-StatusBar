@@ -2,8 +2,8 @@ Makefile.PL
 MANIFEST
 README
 CHANGELOG
-t/use.t
+lib/Term/StatusBar.pm
 tools/build_manifest.pl
 tools/package_up.pl
 tools/build_readme.pl
-lib/Term/StatusBar.pm
+t/use.t

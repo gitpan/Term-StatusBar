@@ -9,7 +9,6 @@ WriteMakefile(
     'ABSTRACT'      => 'Terminal progress bar',
     'PREREQ_PM'     => {
 							"Term::Size"		=> '.2',
-							"Term::ANSIScreen"	=> '1.2',
 					   },
     'DEFINE'        => '',
     'INC'           => '',

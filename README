@@ -1,4 +1,3 @@
-NAME
     Term::StatusBar - Dynamic progress bar
 
 SYNOPSIS
@@ -28,27 +27,28 @@ SYNOPSIS
         }
 
 DESCRIPTION
-    Term::StatusBar uses Term::ANSIScreen for cursor positioning and to give
-    the 'illusion' that the bar is moving. Term::Size is used to ensure the
-    bar does not extend beyond the terminal's width. All outout is sent to
-    STDOUT.
+    Term::StatusBar provides an easy way to create a terminal status bar,
+    much like those found in a graphical environment. Term::Size is used to
+    ensure the bar does not extend beyond the terminal's width. All outout
+    is sent to STDOUT.
 
 METHODS
   new(parameters)
-
     This creates a new StatusBar object. It can take several parameters:
 
-            startRow     - This indicates which row to place the bar at. Default is 1.
-            startCol     - This indicates which column to place the bar at. Default is 1.
-            label        - This places text to the left of the status bar. Default is "Status: ".
-            scale        - This indicates how long the bar is. Default is 40.
-            totalItems   - This tells the bar how many items are being iterated. Default is 1.
-            char         - This indicates which character to use for the base bar. Default is ' ' (space).
-            subText      - Text to display below the status bar
-            subTextAlign - How to align subText ('left', 'center', 'right')
+       startRow     - This indicates which row to place the bar at. Default is 1.
+       startCol     - This indicates which column to place the bar at. Default is 1.
+       label        - This places text to the left of the status bar. Default is "Status: ".
+       scale        - This indicates how long the bar is. Default is 40.
+       totalItems   - This tells the bar how many items are being iterated. Default is 1.
+       char         - This indicates which character to use for the base bar. Default is ' ' (space).
+       subText      - Text to display below the status bar
+       subTextAlign - How to align subText ('left', 'center', 'right')
+       reverse      - Status bar empties to 0% rather than fills to 100%
+       barColor     - Base color of the status bar (default white -- \e[7;37m)
+       fillColor    - Fill color of the status bar (default blue -- \e[7;34m)
 
   setItems(#)
-
     This method does several things with the number that is passed in. First
     it sets $obj->{totalItems}, second it sets an internal counter
     'curItems', last it determins the update increment.
@@ -57,40 +57,38 @@ METHODS
     constructor.
 
   subText('text')
-
-    Sets subText and redisplays it if necessary. If 'text' is not passed in,
-    the current value of $obj->{subText} is returned.
+    Sets subText and redisplays it if necessary.
 
   addSubText('text')
-
     This takes the original value of $obj->{subText} and concats 'text' to
-    it each time it is called. This might not work along side subText()
-    since they both change the value of $obj->{subText}. Might cause
-    subText() to update more frequently than is necessary and cause
-    significant speed decreases in code.
+    it each time it is called. Text is then re-displayed to screen.
 
   start()
-
     This method 'draws' the initial status bar on the screen.
 
   update()
-
     This is really the core of the module. This updates the status bar and
     gives the appearance of movement. It really just redraws the entire
     thing, adding any new incremental updates needed.
 
-  reset()
-
-    This resets the bar's internal state and makes it available for reuse.
+  reset([\%options])
+    This resets the bar's internal state and makes it available for re-use.
+    If the optional hash ref is passed in, the status bar can be filled with
+    specified values. The keys are interpreted as function calls on the
+    status bar object with the values as parameters.
 
   _printPercent()
-
     Internal method to print the current percentage to the screen.
 
   _printSubText()
-
     Internal method to print the subText to the screen.
 
+CHANGES
+2003-01-27
+  Added 'reverse' option to constructor
+  Cleaned up code a bit
+  Only update items when needed (subText was being updated even if it had not changed).
+  Pre-compute lengths and use static value rather than calling length() ever iteration.
 AUTHOR
     Shay Harding <sharding@ccbill.com>
 
@@ -99,5 +97,5 @@ COPYRIGHT
     under the same terms as Perl itself.
 
 SEE ALSO
-    the Term::Size manpage, the Term::ANSIScreen manpage
+    Term::Size, Term::Report
 
