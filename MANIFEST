@@ -1,0 +1,5 @@
+Makefile.PL
+MANIFEST
+tools/build_manifest.pl
+tools/package_up.pl
+lib/Term/StatusBar.pm
